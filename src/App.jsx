@@ -15,6 +15,10 @@ import {
   updateAnalytics, 
   getWinRate 
 } from './payoutResolver'
+import { 
+  calculateLevel, calculateXPEarned, getNextUnlock, 
+  loadProgression, saveProgression, addXP, calculateRunGrade, getEscalationStyles, COSMETICS 
+} from './progression'
 
 const INITIAL_BANKROLL = 1000
 
@@ -80,6 +84,70 @@ const MoodMeter = ({ mood }) => {
       <span className="text-xs text-gray-400 font-stats">Mood</span>
       <div className="flex-1 h-2 bg-[#0a1628] border border-gray-600">
         <div className={`h-full ${colors[mood]} transition-all duration-500`} style={{ width: `${widths[mood]}%` }}></div>
+      </div>
+    </div>
+  )
+}
+
+const XPBar = ({ progression, xpGain, levelUp }) => {
+  const ld = calculateLevel(progression.totalXP)
+  const nu = getNextUnlock(ld.level, 'TABLE_SKINS')
+  return (
+    <div className="citypop-panel-cyan p-2">
+      <div className="flex justify-between items-center mb-1">
+        <div className="flex items-center gap-2">
+          <span className="text-yellow-400 font-stats text-xs">LV.{ld.level}</span>
+          {levelUp && <span className="text-green-400 text-xs animate-pulse">LEVEL UP!</span>}
+        </div>
+        <span className="text-gray-400 text-[10px] font-stats">{ld.currentXP}/{ld.xpToNextLevel} XP</span>
+      </div>
+      <div className="h-2 bg-[#0a1628] border border-gray-600">
+        <div className="h-full bg-gradient-to-r from-pink-500 to-cyan-500 transition-all" style={{ width: `${ld.progressPercent}%` }}></div>
+      </div>
+      {xpGain && <div className="text-center text-green-400 text-xs font-stats mt-1 animate-pulse">+{xpGain} XP</div>}
+      {nu && <p className="text-[8px] text-gray-400 mt-1 font-stats">Next: {nu.name} @ Lv.{nu.level}</p>}
+    </div>
+  )
+}
+
+const CosmeticsModal = ({ progression, onSelect, onClose }) => {
+  const ld = calculateLevel(progression.totalXP)
+  return (
+    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
+      <div className="citypop-panel p-4 max-w-md w-full mx-4 max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-pink-400 text-sm">COSMETICS</h3>
+          <button onClick={onClose}><X className="text-gray-400 w-5 h-5" /></button>
+        </div>
+        <div className="space-y-3 text-xs">
+          <div>
+            <h4 className="text-cyan-400 mb-2">TABLE SKINS</h4>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.values(COSMETICS.TABLE_SKINS).map(s => {
+                const u = s.level <= ld.level
+                return <button key={s.id} onClick={() => u && onSelect('table', s.id)} disabled={!u} className={`p-2 border font-stats ${u ? (progression.selectedTable === s.id ? 'border-pink-500 bg-pink-900' : 'border-gray-600') : 'border-gray-800 opacity-50'}`} style={u ? { backgroundColor: s.color } : {}}>{u ? s.name : `🔒 ${s.level}`}</button>
+              })}
+            </div>
+          </div>
+          <div>
+            <h4 className="text-cyan-400 mb-2">BORDERS</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.values(COSMETICS.BORDER_STYLES).map(b => {
+                const u = b.level <= ld.level
+                return <button key={b.id} onClick={() => u && onSelect('border', b.id)} disabled={!u} className={`p-2 border font-stats ${u ? (progression.selectedBorder === b.id ? 'border-pink-500' : 'border-gray-600') : 'border-gray-800 opacity-50'}`}>{u ? b.name : `🔒 Lv.${b.level}`}</button>
+              })}
+            </div>
+          </div>
+          <div>
+            <h4 className="text-cyan-400 mb-2">DEALER</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {Object.values(COSMETICS.DEALER_PERSONALITIES).map(d => {
+                const u = d.level <= ld.level
+                return <button key={d.id} onClick={() => u && onSelect('dealer', d.id)} disabled={!u} className={`p-2 border font-stats ${u ? (progression.selectedDealer === d.id ? 'border-pink-500' : 'border-gray-600') : 'border-gray-800 opacity-50'}`}>{u ? d.name : `🔒 Lv.${d.level}`}</button>
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -259,10 +327,17 @@ function App() {
   const [runMode, setRunMode] = useState(false)
   const [runResults, setRunResults] = useState([])
   const [runRecap, setRunRecap] = useState(false)
+  const [progression, setProgression] = useState(() => loadProgression())
+  const [cosmeticsOpen, setCosmeticsOpen] = useState(false)
+  const [xpGain, setXpGain] = useState(null)
+  const [levelUp, setLevelUp] = useState(null)
   
   const totalBet = Object.values(bets).reduce((a, b) => a + b, 0)
+  const levelData = calculateLevel(progression.totalXP)
+  const escalation = analytics.currentStreakType === 'win' ? analytics.currentStreak : 0
   
   useEffect(() => { saveGameState({ bankroll, history, analytics, settings: { sound: soundEnabled } }) }, [bankroll, history, analytics, soundEnabled])
+  useEffect(() => { saveProgression(progression) }, [progression])
   
   useEffect(() => {
     if (analytics.currentStreakType === 'win' && analytics.currentStreak >= 2) setMood(analytics.currentStreak >= 3 ? 'winning' : 'happy')
@@ -300,12 +375,29 @@ function App() {
         setResult(spinResult.number); setSpinAngle(newAngle)
         const betsObj = { red: bets.red, black: bets.black, odd: bets.odd, even: bets.even, first12: bets.first12, second12: bets.second12, third12: bets.third12, straight: Object.fromEntries(Object.entries(bets).filter(([k,v]) => typeof k === 'string' && !isNaN(parseInt(k))).map(([k,v]) => [k,v])) }
         const payout = calculatePayouts(spinResult, betsObj)
+        const isStraightHit = payout.winningBets.some(wb => wb.type === 'straight')
+        const xpEarned = calculateXPEarned(payout.netGain, isStraightHit, analytics.currentStreak, payout.isWin)
+        const oldLevel = calculateLevel(progression.totalXP).level
         const newBankroll = bankroll + payout.netGain
         setBankroll(newBankroll)
         const newHistory = [{ spin: history.length + 1, number: spinResult.number, color: spinResult.color, result: payout.netGain }, ...history].slice(0, 10)
         setHistory(newHistory)
         const newAnalytics = updateAnalytics(analytics, payout)
         setAnalytics(newAnalytics)
+        
+        // Update progression with XP
+        setProgression(prev => addXP(prev, xpEarned))
+        
+        // Show XP gain
+        setXpGain(xpEarned)
+        setTimeout(() => setXpGain(null), 1500)
+        
+        // Check for level up
+        const newLevel = calculateLevel(progression.totalXP + xpEarned).level
+        if (newLevel > oldLevel) {
+          setLevelUp(newLevel)
+          setTimeout(() => setLevelUp(null), 2500)
+        }
         
         if (payout.isWin) { setMood(payout.netGain > 100 ? 'winning' : 'happy'); setSpeech(DEALER_LINES[payout.netGain > 100 ? 'winning' : 'happy'][Math.floor(Math.random() * 4)]) }
         else if (payout.isLoss) { setMood(newAnalytics.currentStreak >= 3 ? 'tilted' : 'losing'); setSpeech(DEALER_LINES.losing[Math.floor(Math.random() * DEALER_LINES.losing.length)]) }
@@ -334,12 +426,20 @@ function App() {
   
   const startRunMode = () => { setRunMode(true); setRunResults([]); setSpeech('Starting 10-spin run!'); setShowSpeech(true); setTimeout(() => setShowSpeech(false), 2000) }
   
+  const selectCosmetic = (type, id) => {
+    setProgression(prev => ({ ...prev, [`selected${type.charAt(0).toUpperCase() + type.slice(1)}`]: id }))
+    setCosmeticsOpen(false)
+  }
+  
   return (
     <div className="min-h-screen">
       <header className="citypop-panel border-b-0 px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center justify-between max-w-6xl mx-auto flex-wrap gap-2">
           <div className="flex items-center"><span className="text-3xl sm:text-4xl mr-2 sm:mr-3">🎰</span><div><h1 className="text-pink-400 text-sm sm:text-base">WAIFU ROULETTE</h1><p className="text-cyan-400/60 text-[8px] sm:text-xs">LOUNGE EDITION</p></div></div>
           <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+            <button onClick={() => setCosmeticsOpen(true)} className="citypop-panel-cyan px-2 py-1 sm:px-3 sm:py-2 flex items-center gap-1.5 sm:gap-2 border-2 border-cyan-500 hover:border-cyan-400">
+              <span className="text-yellow-400 font-stats text-xs sm:text-sm">LV.{levelData.level}</span>
+            </button>
             <div className="citypop-panel-cyan px-3 py-1.5 sm:px-4 sm:py-2"><div className="flex items-center gap-1.5 sm:gap-2"><Coins className="text-yellow-400 w-4 h-4 sm:w-5 sm:h-5" /><span className="font-stats text-yellow-400 text-lg sm:text-2xl">{bankroll.toLocaleString()}</span></div></div>
             <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 sm:p-2 border-2 border-gray-600 hover:border-pink-500">{soundEnabled ? <Volume2 className="text-pink-400 w-4 h-4 sm:w-5 sm:h-5" /> : <VolumeX className="text-gray-500 w-4 h-4 sm:w-5 sm:h-5" />}</button>
             <button onClick={resetGame} className="p-1.5 sm:p-2 border-2 border-gray-600 hover:border-red-500 disabled:opacity-50" disabled={spinning}><RotateCcw className="text-pink-400 w-4 h-4 sm:w-5 sm:h-5" /></button>
@@ -350,6 +450,7 @@ function App() {
       <main className="max-w-6xl mx-auto p-2 sm:p-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4">
           <div className="space-y-2 sm:space-y-4">
+            <XPBar progression={progression} xpGain={xpGain} levelUp={levelUp} />
             <div className="citypop-panel p-3 sm:p-4 flex flex-col items-center"><h2 className="text-pink-400 mb-2 text-xs sm:text-sm">DEALER</h2><div className="relative mb-2"><DealerAvatar mood={mood} /><SpeechBubble message={speech} visible={showSpeech} /></div><MoodMeter mood={mood} /></div>
             <div className="citypop-panel-cyan p-3 sm:p-4"><h3 className="text-cyan-400 text-xs mb-2 flex items-center gap-2"><TrendingUp className="w-3 h-3" />STATS</h3><div className="grid grid-cols-2 gap-2 text-xs font-stats"><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Win Rate</span><span className="text-green-500 text-lg">{getWinRate(analytics)}%</span></div><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Spins</span><span className="text-white text-lg">{analytics.totalSpins}</span></div><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Biggest</span><span className="text-yellow-400 text-lg">{analytics.biggestWin}</span></div><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Streak</span><span className="text-pink-400 text-lg">{analytics.currentStreak > 0 ? analytics.currentStreak + (analytics.currentStreakType === 'win' ? '🔥' : '💨') : '-'}</span></div></div></div>
           </div>
@@ -380,6 +481,7 @@ function App() {
       
       {shareCard && <ShareCard result={shareCard} bankroll={bankroll} onClose={() => setShareCard(null)} />}
       {runRecap && <RunRecapModal runResults={runResults} bankroll={bankroll} onClose={() => setRunRecap(false)} />}
+      {cosmeticsOpen && <CosmeticsModal progression={progression} onSelect={selectCosmetic} onClose={() => setCosmeticsOpen(false)} />}
     </div>
   )
 }
