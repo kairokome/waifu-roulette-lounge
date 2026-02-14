@@ -21,6 +21,7 @@ import {
 } from './progression'
 import { eventsEngine, EVENTS } from './systems/eventsEngine'
 import { loadShopState, saveShopState, purchaseItem, equipItem, SHOP_CATALOG, getAvailableItems } from './systems/shop'
+import { loadOutfitState, saveOutfitState, OUTFITS, purchaseOutfit, equipOutfit } from './systems/outfitSystem'
 
 const INITIAL_BANKROLL = 1000
 
@@ -73,6 +74,55 @@ const playLoseSound = () => {
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + 0.3)
   } catch (e) {}
+}
+
+// Intro Sequence Component
+const IntroSequence = ({ onComplete }) => {
+  const [phase, setPhase] = useState(0)
+  
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setPhase(1), 500),
+      setTimeout(() => setPhase(2), 2000),
+      setTimeout(() => setPhase(3), 3500),
+      setTimeout(() => {
+        try { localStorage.setItem('waifuRouletteIntroSeen', 'true') } catch {}
+        onComplete()
+      }, 5000),
+    ]
+    return () => timers.forEach(clearTimeout)
+  }, [onComplete])
+  
+  return (
+    <div className="fixed inset-0 bg-[#0a1628] z-50 flex flex-col items-center justify-center">
+      {phase >= 1 && (
+        <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(ellipse at center, rgba(236,72,153,0.3) 0%, transparent 70%)' }}></div>
+      )}
+      {phase >= 2 && (
+        <div className="text-center animate-fade-in">
+          <h1 className="text-4xl sm:text-6xl font-stats text-pink-400 mb-4">WAIFU ROULETTE</h1>
+          <p className="text-cyan-400 font-stats text-lg sm:text-xl">'87 EDITION</p>
+        </div>
+      )}
+      {phase >= 3 && (
+        <p className="absolute bottom-20 text-gray-500 text-xs font-stats animate-pulse">PRESS START</p>
+      )}
+    </div>
+  )
+}
+
+// Vignette Effect Component
+const VignetteOverlay = ({ intensity }) => {
+  if (intensity <= 0) return null
+  return (
+    <div 
+      className="fixed inset-0 pointer-events-none z-30"
+      style={{
+        background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${0.6 * intensity}) 100%)`,
+        transition: 'background 0.3s ease'
+      }}
+    />
+  )
 }
 
 // Event Toast Component
@@ -278,26 +328,28 @@ const CosmeticsModal = ({ progression, onSelect, onClose }) => {
   )
 }
 
-const RouletteWheel = ({ spinning, result, spinAngle }) => {
+const RouletteWheel = ({ spinning, result, spinAngle, winningNumber }) => {
   const numbers = Array.from({ length: 37 }, (_, i) => i)
   return (
-    <div className="relative w-64 h-64 sm:w-72 sm:h-72 border-4 border-cyan-500 bg-[#0a1628] flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+    <div className={`relative w-64 h-64 sm:w-72 sm:h-72 border-4 border-cyan-500 bg-[#0a1628] flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.3)] ${spinning ? 'animate-pulse' : ''}`}>
       <div 
-        className="absolute inset-2 transition-transform"
+        className="absolute inset-2"
         style={{ 
           transform: `rotate(${spinAngle}deg)`,
-          transition: spinning ? 'transform 3s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none'
+          transition: spinning ? 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)' : 'transform 0.5s ease-out'
         }}
       >
         {numbers.map((num, i) => {
           const angle = (i * 360) / 37
+          const isWinner = !spinning && winningNumber === num
           const bgColor = num === 0 ? '#10b981' : RED_NUMBERS.includes(num) ? '#dc2626' : '#1f2937'
           return (
-            <div key={num} className="absolute w-7 h-7 flex items-center justify-center text-[10px] font-bold text-white border border-[#0a1628]"
+            <div key={num} className={`absolute w-7 h-7 flex items-center justify-center text-[10px] font-bold border-2 ${isWinner ? 'ring-4 ring-yellow-400 z-10 scale-110' : 'border-[#0a1628]'}`}
                  style={{
                    top: '50%', left: '50%',
-                   transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-95px) rotate(-${angle}deg)`,
+                   transform: `translate(-50%, -50%) rotate(${angle}deg) translateY(-95px) rotate(-${angle}deg})${isWinner ? ' scale-110' : ''}`,
                    backgroundColor: bgColor,
+                   boxShadow: isWinner ? '0 0 20px rgba(234,179,8,0.8)' : 'none',
                  }}>
               {num}
             </div>
@@ -305,11 +357,13 @@ const RouletteWheel = ({ spinning, result, spinAngle }) => {
         })}
       </div>
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#1a2744] border-4 border-cyan-400 flex items-center justify-center z-10">
-          <span className="text-2xl sm:text-3xl font-bold text-cyan-300 font-stats">{result !== null ? result : '🎰'}</span>
+        <div className={`w-16 h-16 sm:w-20 sm:h-20 bg-[#1a2744] border-4 border-cyan-400 flex items-center justify-center z-20 ${!spinning && result !== null ? 'animate-bounce' : ''}`}>
+          <span className="text-2xl sm:text-3xl font-bold text-cyan-300 font-stats">
+            {spinning ? '...' : (result !== null ? result : '🎰')}
+          </span>
         </div>
       </div>
-      <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-b-12 border-l-transparent border-r-transparent border-b-cyan-400 z-20"></div>
+      <div className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-8 border-r-8 border-b-12 border-l-transparent border-r-transparent border-b-cyan-400 z-30"></div>
     </div>
   )
 }
@@ -459,7 +513,12 @@ function App() {
   const [screen, setScreen] = useState('menu') // menu, game, stats
   const [audioEnabled, setAudioEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('waifuRouletteAudio') || 'true') } catch { return true } })
   const [shopState, setShopState] = useState(() => loadShopState())
+  const [outfitState, setOutfitState] = useState(() => loadOutfitState())
   const [eventToast, setEventToast] = useState(null)
+  const [showIntro, setShowIntro] = useState(() => { try { return !localStorage.getItem('waifuRouletteIntroSeen') } catch { return true } })
+  const [vignette, setVignette] = useState(0)
+  const [winningNumber, setWinningNumber] = useState(null)
+  const [precomputedResult, setPrecomputedResult] = useState(null)
 
   // Save audio preference
   useEffect(() => { try { localStorage.setItem('waifuRouletteAudio', JSON.stringify(audioEnabled)) } catch {} }, [audioEnabled])
@@ -471,6 +530,7 @@ function App() {
   useEffect(() => { saveGameState({ bankroll, history, analytics, settings: { sound: soundEnabled } }) }, [bankroll, history, analytics, soundEnabled])
   useEffect(() => { saveProgression(progression) }, [progression])
   useEffect(() => { saveShopState(shopState) }, [shopState])
+  useEffect(() => { saveOutfitState(outfitState) }, [outfitState])
   
   useEffect(() => {
     if (analytics.currentStreakType === 'win' && analytics.currentStreak >= 2) setMood(analytics.currentStreak >= 3 ? 'winning' : 'happy')
@@ -494,9 +554,15 @@ function App() {
   
   const spin = useCallback(() => {
     if (spinning || totalBet === 0) return
+    // Precompute result before animation starts
+    const spinResult = spinRoulette()
+    setPrecomputedResult(spinResult)
+    setWinningNumber(spinResult.number)
     const duration = getRandomSpinDuration()
     const newAngle = spinAngle + (360 * 5) + Math.floor(Math.random() * 360)
     setSpinning(true); setMood('excited'); setSpeech(DEALER_LINES.neutral[Math.floor(Math.random() * DEALER_LINES.neutral.length)]); setShowSpeech(true); if (audioEnabled) playSpinSound()
+    // Add vignette for high stakes
+    if (totalBet > 100) setVignette(1)
     
     let spinCount = 0
     const spinInterval = setInterval(() => {
@@ -504,8 +570,8 @@ function App() {
       spinCount++
       if (spinCount > Math.floor(duration / 60)) {
         clearInterval(spinInterval)
-        const spinResult = spinRoulette()
-        setResult(spinResult.number); setSpinAngle(newAngle)
+        const sr = precomputedResult || spinRoulette()
+        setResult(sr.number); setSpinAngle(newAngle)
         const betsObj = { red: bets.red, black: bets.black, odd: bets.odd, even: bets.even, first12: bets.first12, second12: bets.second12, third12: bets.third12, straight: Object.fromEntries(Object.entries(bets).filter(([k,v]) => typeof k === 'string' && !isNaN(parseInt(k))).map(([k,v]) => [k,v])) }
         const payout = calculatePayouts(spinResult, betsObj)
         const isStraightHit = payout.winningBets.some(wb => wb.type === 'straight')
@@ -557,7 +623,7 @@ function App() {
         if (runMode) setRunResults(prev => [...prev, { bet: totalBet, result: payout.netGain }])
         
         setTimeout(() => {
-          setSpinning(false); setShowSpeech(true); setShareCard({ number: spinResult.number, color: spinResult.color })
+          setSpinning(false); setShowSpeech(true); setVignette(0); setWinningNumber(null); setPrecomputedResult(null); setShareCard({ number: sr.number, color: sr.color })
           if (runMode && newAnalytics.totalSpins % 10 === 0) { setRunRecap(true); setRunMode(false) }
           setTimeout(() => setShowSpeech(false), 3000)
           setBets({ red: 0, black: 0, odd: 0, even: 0, first12: 0, second12: 0, third12: 0, ...Object.fromEntries(Array.from({length: 37}, (_, i) => [i, 0])) })
@@ -583,7 +649,9 @@ function App() {
   }
   
   return (
-    <>{screen === 'menu' && <MainMenu onStart={() => setScreen('game')} onStats={() => setScreen('stats')} progression={progression} />}
+    <>{showIntro && <IntroSequence onComplete={() => setShowIntro(false)} />}
+      <VignetteOverlay intensity={vignette} />
+      {screen === 'menu' && <MainMenu onStart={() => setScreen('game')} onStats={() => setScreen('stats')} progression={progression} />}
       {screen === 'stats' && <StatsScreen progression={progression} onBack={() => setScreen('menu')} />}
       {screen === 'game' && <div className="min-h-screen">
       <header className="citypop-panel border-b-0 px-4 py-3 sm:px-6 sm:py-4">
@@ -610,7 +678,7 @@ function App() {
           
           <div className="citypop-panel p-3 sm:p-4 flex flex-col items-center">
             <h2 className="text-cyan-400 mb-2 text-xs sm:text-sm">ROULETTE</h2>
-            <RouletteWheel spinning={spinning} result={result} spinAngle={spinAngle} />
+            <RouletteWheel spinning={spinning} result={result} spinAngle={spinAngle} winningNumber={winningNumber} />
             <div className="flex gap-2 mt-4 w-full">
               <button onClick={undoBet} disabled={spinning || betHistory.length === 0} className="flex-1 bg-[#1f2937] disabled:opacity-50 text-white py-2 font-stats text-xs border-2 border-gray-600 hover:border-gray-500 disabled:cursor-not-allowed">UNDO</button>
               <button onClick={spin} disabled={spinning || totalBet === 0} className={`flex-1 py-2 font-stats text-xs transition-all border-2 ${spinning || totalBet === 0 ? 'bg-[#1f2937] text-gray-500 border-gray-700 cursor-not-allowed' : 'bg-pink-600 hover:bg-pink-500 text-white border-pink-400'}`}>{spinning ? 'SPINNING...' : totalBet === 0 ? 'PLACE BETS' : 'SPIN!'}</button>
