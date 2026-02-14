@@ -22,6 +22,116 @@ import {
 
 const INITIAL_BANKROLL = 1000
 
+// Audio context for SFX
+const playSpinSound = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = 220
+    gain.gain.setValueAtTime(0.1, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.1)
+  } catch (e) {}
+}
+
+const playWinSound = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.setValueAtTime(523, ctx.currentTime)
+    osc.frequency.setValueAtTime(659, ctx.currentTime + 0.1)
+    osc.frequency.setValueAtTime(784, ctx.currentTime + 0.2)
+    gain.gain.setValueAtTime(0.15, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.4)
+  } catch (e) {}
+}
+
+const playLoseSound = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.setValueAtTime(200, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3)
+    gain.gain.setValueAtTime(0.1, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.3)
+  } catch (e) {}
+}
+
+// Main Menu Component
+const MainMenu = ({ onStart, onStats, progression }) => {
+  const ld = calculateLevel(progression.totalXP)
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl sm:text-5xl font-stats text-pink-400 mb-2">WAIFU ROULETTE</h1>
+        <p className="text-cyan-400 font-stats text-sm sm:text-lg">’87 EDITION</p>
+      </div>
+      <div className="citypop-panel p-6 sm:p-8 space-y-4 w-full max-w-sm">
+        <button onClick={onStart} className="w-full py-3 sm:py-4 bg-pink-600 hover:bg-pink-500 text-white font-stats text-sm sm:text-lg border-2 border-pink-400 hover:border-pink-300 transition-all">
+          START SESSION
+        </button>
+        <button onClick={onStats} className="w-full py-3 sm:py-4 bg-[#1a2744] hover:bg-[#243654] text-cyan-300 font-stats text-sm sm:text-lg border-2 border-cyan-500 hover:border-cyan-400 transition-all">
+          VIEW STATS
+        </button>
+      </div>
+      <p className="text-gray-500 text-xs mt-8 font-stats">Level {ld.level} • {progression.totalXP} XP</p>
+    </div>
+  )
+}
+
+// Stats Screen Component
+const StatsScreen = ({ progression, onBack }) => {
+  const ld = calculateLevel(progression.totalXP)
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="citypop-panel p-6 w-full max-w-sm">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-cyan-400 font-stats text-sm">STATISTICS</h2>
+          <button onClick={onBack}><X className="text-gray-400 w-5 h-5" /></button>
+        </div>
+        <div className="space-y-3 font-stats text-sm">
+          <div className="flex justify-between bg-[#0a1628] p-3 border border-gray-700">
+            <span className="text-gray-400">Level</span>
+            <span className="text-yellow-400">{ld.level}</span>
+          </div>
+          <div className="flex justify-between bg-[#0a1628] p-3 border border-gray-700">
+            <span className="text-gray-400">Total XP</span>
+            <span className="text-pink-400">{progression.totalXP}</span>
+          </div>
+          <div className="flex justify-between bg-[#0a1628] p-3 border border-gray-700">
+            <span className="text-gray-400">Total Spins</span>
+            <span className="text-white">{progression.totalSpins || 0}</span>
+          </div>
+          <div className="flex justify-between bg-[#0a1628] p-3 border border-gray-700">
+            <span className="text-gray-400">Runs Completed</span>
+            <span className="text-white">{progression.runsCompleted || 0}</span>
+          </div>
+          <div className="flex justify-between bg-[#0a1628] p-3 border border-gray-700">
+            <span className="text-gray-400">Best Grade</span>
+            <span className="text-yellow-400">{progression.bestGrade || '-'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const DEALER_LINES = {
   happy: ["Nice win!", "You're on fire!", "Another one!", "Lucky you!", "Amazing!"],
   neutral: ["Place your bets!", "Good luck!", "Let's go!", "Fingers crossed!", "Ready when you are!"],
@@ -331,6 +441,11 @@ function App() {
   const [cosmeticsOpen, setCosmeticsOpen] = useState(false)
   const [xpGain, setXpGain] = useState(null)
   const [levelUp, setLevelUp] = useState(null)
+  const [screen, setScreen] = useState('menu') // menu, game, stats
+  const [audioEnabled, setAudioEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('waifuRouletteAudio') || 'true') } catch { return true } })
+
+  // Save audio preference
+  useEffect(() => { try { localStorage.setItem('waifuRouletteAudio', JSON.stringify(audioEnabled)) } catch {} }, [audioEnabled])
   
   const totalBet = Object.values(bets).reduce((a, b) => a + b, 0)
   const levelData = calculateLevel(progression.totalXP)
@@ -363,7 +478,7 @@ function App() {
     if (spinning || totalBet === 0) return
     const duration = getRandomSpinDuration()
     const newAngle = spinAngle + (360 * 5) + Math.floor(Math.random() * 360)
-    setSpinning(true); setMood('excited'); setSpeech(DEALER_LINES.neutral[Math.floor(Math.random() * DEALER_LINES.neutral.length)]); setShowSpeech(true)
+    setSpinning(true); setMood('excited'); setSpeech(DEALER_LINES.neutral[Math.floor(Math.random() * DEALER_LINES.neutral.length)]); setShowSpeech(true); if (audioEnabled) playSpinSound()
     
     let spinCount = 0
     const spinInterval = setInterval(() => {
@@ -399,6 +514,8 @@ function App() {
           setTimeout(() => setLevelUp(null), 2500)
         }
         
+        if (audioEnabled && payout.isWin) playWinSound()
+        if (audioEnabled && payout.isLoss) playLoseSound()
         if (payout.isWin) { setMood(payout.netGain > 100 ? 'winning' : 'happy'); setSpeech(DEALER_LINES[payout.netGain > 100 ? 'winning' : 'happy'][Math.floor(Math.random() * 4)]) }
         else if (payout.isLoss) { setMood(newAnalytics.currentStreak >= 3 ? 'tilted' : 'losing'); setSpeech(DEALER_LINES.losing[Math.floor(Math.random() * DEALER_LINES.losing.length)]) }
         else { setMood('neutral'); setSpeech('Push!') }
@@ -432,7 +549,9 @@ function App() {
   }
   
   return (
-    <div className="min-h-screen">
+    <>{screen === 'menu' && <MainMenu onStart={() => setScreen('game')} onStats={() => setScreen('stats')} progression={progression} />}
+      {screen === 'stats' && <StatsScreen progression={progression} onBack={() => setScreen('menu')} />}
+      {screen === 'game' && <div className="min-h-screen">
       <header className="citypop-panel border-b-0 px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center justify-between max-w-6xl mx-auto flex-wrap gap-2">
           <div className="flex items-center"><span className="text-3xl sm:text-4xl mr-2 sm:mr-3">🎰</span><div><h1 className="text-pink-400 text-sm sm:text-base">WAIFU ROULETTE</h1><p className="text-cyan-400/60 text-[8px] sm:text-xs">LOUNGE EDITION</p></div></div>
@@ -441,8 +560,8 @@ function App() {
               <span className="text-yellow-400 font-stats text-xs sm:text-sm">LV.{levelData.level}</span>
             </button>
             <div className="citypop-panel-cyan px-3 py-1.5 sm:px-4 sm:py-2"><div className="flex items-center gap-1.5 sm:gap-2"><Coins className="text-yellow-400 w-4 h-4 sm:w-5 sm:h-5" /><span className="font-stats text-yellow-400 text-lg sm:text-2xl">{bankroll.toLocaleString()}</span></div></div>
-            <button onClick={() => setSoundEnabled(!soundEnabled)} className="p-1.5 sm:p-2 border-2 border-gray-600 hover:border-pink-500">{soundEnabled ? <Volume2 className="text-pink-400 w-4 h-4 sm:w-5 sm:h-5" /> : <VolumeX className="text-gray-500 w-4 h-4 sm:w-5 sm:h-5" />}</button>
-            <button onClick={resetGame} className="p-1.5 sm:p-2 border-2 border-gray-600 hover:border-red-500 disabled:opacity-50" disabled={spinning}><RotateCcw className="text-pink-400 w-4 h-4 sm:w-5 sm:h-5" /></button>
+            <button onClick={() => setAudioEnabled(!audioEnabled)} className="p-1.5 sm:p-2 border-2 border-gray-600 hover:border-pink-500">{audioEnabled ? <Volume2 className="text-pink-400 w-4 h-4 sm:w-5 sm:h-5" /> : <VolumeX className="text-gray-500 w-4 h-4 sm:w-5 sm:h-5" />}</button>
+            <button onClick={() => setScreen('menu')} className="p-1.5 sm:p-2 border-2 border-gray-600 hover:border-cyan-500 text-cyan-400 text-xs font-stats">MENU</button>
           </div>
         </div>
       </header>
@@ -461,6 +580,7 @@ function App() {
             <div className="flex gap-2 mt-4 w-full">
               <button onClick={undoBet} disabled={spinning || betHistory.length === 0} className="flex-1 bg-[#1f2937] disabled:opacity-50 text-white py-2 font-stats text-xs border-2 border-gray-600 hover:border-gray-500 disabled:cursor-not-allowed">UNDO</button>
               <button onClick={spin} disabled={spinning || totalBet === 0} className={`flex-1 py-2 font-stats text-xs transition-all border-2 ${spinning || totalBet === 0 ? 'bg-[#1f2937] text-gray-500 border-gray-700 cursor-not-allowed' : 'bg-pink-600 hover:bg-pink-500 text-white border-pink-400'}`}>{spinning ? 'SPINNING...' : totalBet === 0 ? 'PLACE BETS' : 'SPIN!'}</button>
+            {progression.totalSpins < 3 && <p className="text-[8px] text-gray-500 text-center mt-1 font-stats">Earn XP with each spin to level up!</p>}
             </div>
             <div className="mt-4 w-full"><h3 className="text-gray-400 text-[10px] text-center mb-2 font-stats">LAST 10</h3><div className="flex flex-wrap justify-center gap-1">{history.length === 0 ? <span className="text-gray-500 text-xs">No spins yet</span> : history.slice(0, 10).map((h, i) => <span key={i} className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-[9px] sm:text-xs font-bold border-2 text-white" style={{ backgroundColor: h.color === 'red' ? '#991b1b' : h.color === 'black' ? '#1f2937' : '#065f46', borderColor: h.color === 'red' ? '#dc2626' : h.color === 'black' ? '#4b5563' : '#10b981' }}>{h.number}</span>)}</div></div>
             <div className="mt-3 w-full"><button onClick={startRunMode} disabled={spinning || runMode} className="w-full bg-[#1e3a5f] hover:bg-[#264973] text-white py-2 font-stats text-xs flex items-center justify-center gap-2 border-2 border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"><Play className="w-3 h-3" />10-SPIN RUN</button>{runMode && <p className="text-pink-400 text-[10px] mt-1 text-center">Run in progress... {analytics.totalSpins % 10}/10</p>}</div>
@@ -482,7 +602,8 @@ function App() {
       {shareCard && <ShareCard result={shareCard} bankroll={bankroll} onClose={() => setShareCard(null)} />}
       {runRecap && <RunRecapModal runResults={runResults} bankroll={bankroll} onClose={() => setRunRecap(false)} />}
       {cosmeticsOpen && <CosmeticsModal progression={progression} onSelect={selectCosmetic} onClose={() => setCosmeticsOpen(false)} />}
-    </div>
+      </div>}
+    </>
   )
 }
 
