@@ -65,6 +65,10 @@ h1, h2, h3, h4, h5, h6 {
   animation: spin 2s ease-out forwards;
 }
 
+.animate-spin-slow {
+  animation: spin 2s ease-out forwards;
+}
+
 @keyframes bounce-slow {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
