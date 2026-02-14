@@ -1,29 +1,78 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Coins, RotateCcw, Volume2, VolumeX, Trophy, TrendingUp, Share2, Play, X, Copy, Check } from 'lucide-react'
-import { 
-  spinRoulette, 
-  getRandomSpinDuration, 
+import {
+  spinRoulette,
+  getRandomSpinDuration,
   getNumberColor,
   CHIP_DENOMINATIONS,
   DEFAULT_BET_AMOUNTS,
   RED_NUMBERS,
   BLACK_NUMBERS
 } from './rouletteEngine'
-import { 
-  calculatePayouts, 
-  createInitialAnalytics, 
-  updateAnalytics, 
-  getWinRate 
+import {
+  calculatePayouts,
+  createInitialAnalytics,
+  updateAnalytics,
+  getWinRate
 } from './payoutResolver'
-import { 
-  calculateLevel, calculateXPEarned, getNextUnlock, 
-  loadProgression, saveProgression, addXP, calculateRunGrade, getEscalationStyles, COSMETICS 
+import {
+  calculateLevel, calculateXPEarned, getNextUnlock,
+  loadProgression, saveProgression, addXP, calculateRunGrade, getEscalationStyles, COSMETICS
 } from './progression'
 import { eventsEngine, EVENTS } from './systems/eventsEngine'
 import { loadShopState, saveShopState, purchaseItem, equipItem, SHOP_CATALOG, getAvailableItems } from './systems/shop'
-import { loadOutfitState, saveOutfitState, OUTFITS, purchaseOutfit, equipOutfit } from './systems/outfitSystem'
+import { loadOutfitState, OUTFITS, purchaseOutfit, equipOutfit } from './systems/outfitSystem'
 
 const INITIAL_BANKROLL = 1000
+const PROFILE_KEY = 'casino_profile_v1'
+
+// Profile System - consolidate all saves
+function loadProfile() {
+  try {
+    // Try new profile format first
+    const saved = localStorage.getItem(PROFILE_KEY)
+    if (saved) return JSON.parse(saved)
+    
+    // Migration: check for old keys
+    const oldGame = localStorage.getItem('waifuRoulette')
+    const oldProgression = localStorage.getItem('waifuRouletteProgression')
+    const oldShop = localStorage.getItem('waifuRouletteShop')
+    const oldOutfits = localStorage.getItem('waifuRouletteOutfits')
+    const oldAudio = localStorage.getItem('waifuRouletteAudio')
+    const oldEvents = localStorage.getItem('waifuRouletteEvents')
+    
+    if (oldGame || oldProgression || oldShop || oldOutfits) {
+      const profile = {
+        game: oldGame ? JSON.parse(oldGame) : { bankroll: INITIAL_BANKROLL, history: [], analytics: { totalSpins: 0, totalWins: 0, biggestWin: 0, currentStreak: 0, currentStreakType: 'none' } },
+        progression: oldProgression ? JSON.parse(oldProgression) : null,
+        shop: oldShop ? JSON.parse(oldShop) : null,
+        outfits: oldOutfits ? JSON.parse(oldOutfits) : null,
+        audio: oldAudio ? JSON.parse(oldAudio) : true,
+        events: oldEvents ? JSON.parse(oldEvents) : null,
+      }
+      saveProfile(profile)
+      // Clear old keys
+      ;['waifuRoulette', 'waifuRouletteProgression', 'waifuRouletteShop', 'waifuRouletteOutfits', 'waifuRouletteAudio', 'waifuRouletteEvents'].forEach(k => localStorage.removeItem(k))
+      return profile
+    }
+  } catch (e) { console.error('Load profile error:', e) }
+  return createNewProfile()
+}
+
+function createNewProfile() {
+  return {
+    game: { bankroll: INITIAL_BANKROLL, history: [], analytics: { totalSpins: 0, totalWins: 0, biggestWin: 0, currentStreak: 0, currentStreakType: 'none' } },
+    progression: { totalXP: 0, totalSpins: 0, bestGrade: null, unlockedCosmetics: ['default'], selectedTable: 'default', selectedBorder: 'default', selectedDealer: 'default', stats: { totalWins: 0, totalStraightHits: 0, runsCompleted: 0 } },
+    shop: { ownedItems: {}, equipped: { tableSkin: 'default', border: 'default', cosmeticItems: [] } },
+    outfits: { ownedOutfits: ['outfit_croupier'], equippedOutfit: 'outfit_croupier' },
+    audio: true,
+    events: { spinCount: 0, nextEventAt: 5, activeModifiers: [], eventHistory: [], cooldowns: {} },
+  }
+}
+
+function saveProfile(profile) {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)) } catch (e) { console.error('Save profile error:', e) }
+}
 
 // Audio context for SFX
 const playSpinSound = () => {
@@ -79,7 +128,7 @@ const playLoseSound = () => {
 // Intro Sequence Component
 const IntroSequence = ({ onComplete }) => {
   const [phase, setPhase] = useState(0)
-  
+
   useEffect(() => {
     const timers = [
       setTimeout(() => setPhase(1), 500),
@@ -92,7 +141,7 @@ const IntroSequence = ({ onComplete }) => {
     ]
     return () => timers.forEach(clearTimeout)
   }, [onComplete])
-  
+
   return (
     <div className="fixed inset-0 bg-[#0a1628] z-50 flex flex-col items-center justify-center">
       {phase >= 1 && (
@@ -115,7 +164,7 @@ const IntroSequence = ({ onComplete }) => {
 const VignetteOverlay = ({ intensity }) => {
   if (intensity <= 0) return null
   return (
-    <div 
+    <div
       className="fixed inset-0 pointer-events-none z-30"
       style={{
         background: `radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,${0.6 * intensity}) 100%)`,
@@ -138,21 +187,107 @@ const EventToast = ({ toast }) => {
   )
 }
 
+// Shop Screen Component
+const ShopScreen = ({ progression, outfitState, bankroll, onBuy, onEquip, onClose }) => {
+  const ld = calculateLevel(progression.totalXP)
+  const tiers = ['TIER_1', 'TIER_2', 'TIER_3']
+  
+  return (
+    <div className="min-h-screen flex flex-col p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-cyan-400 font-stats text-sm">OUTFIT SHOP</h2>
+        <div className="flex items-center gap-3">
+          <span className="text-yellow-400 font-stats text-sm">{bankroll} chips</span>
+          <button onClick={onClose}><X className="text-gray-400 w-5 h-5" /></button>
+        </div>
+      </div>
+      <p className="text-gray-400 text-xs mb-4">Level {ld.level} • {progression.totalXP} XP</p>
+      
+      <div className="flex-1 overflow-y-auto space-y-6">
+        {tiers.map(tier => {
+          const outfits = Object.values(OUTFITS).filter(o => o.tier.label === OUTFIT_TIERS[tier].label)
+          const locked = outfits.some(o => o.tier.unlockLevel > ld.level)
+          return (
+            <div key={tier} className={locked ? 'opacity-50' : ''}>
+              <h3 className="text-pink-400 text-xs mb-2 font-stats">{OUTFIT_TIERS[tier].label} {locked && '(Unlock at Lv. ' + Math.min(...outfits.map(o => o.tier.unlockLevel)) + ')'}</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {outfits.map(outfit => {
+                  const owned = outfitState.ownedOutfits.includes(outfit.id)
+                  const equipped = outfitState.equippedOutfit === outfit.id
+                  const canAfford = bankroll >= outfit.price
+                  const unlocked = ld.level >= outfit.tier.unlockLevel
+                  
+                  return (
+                    <div key={outfit.id} className="citypop-panel p-2 border-2" style={{ borderColor: outfit.colors.primary }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-6 h-6 rounded" style={{ backgroundColor: outfit.colors.accent }}></div>
+                        <span className="text-white text-xs font-stats">{outfit.name}</span>
+                      </div>
+                      <p className="text-gray-500 text-[8px] mb-1">{outfit.description}</p>
+                      {equipped ? (
+                        <span className="text-green-400 text-xs font-stats">EQUIPPED</span>
+                      ) : owned ? (
+                        <button onClick={() => onEquip(outfit.id)} className="w-full bg-cyan-600 hover:bg-cyan-500 text-white text-[10px] py-1 font-stats">EQUIP</button>
+                      ) : (
+                        <button onClick={() => unlocked && canAfford && onBuy(outfit.id, outfit.price)} disabled={!unlocked || !canAfford} className={`w-full text-[10px] py-1 font-stats ${unlocked && canAfford ? 'bg-yellow-600 hover:bg-yellow-500 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}>
+                          {unlocked ? outfit.price + ' chips' : 'Lv.' + outfit.tier.unlockLevel}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Reset Confirmation Modal
+const ResetModal = ({ onConfirm, onCancel }) => (
+  <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50">
+    <div className="citypop-panel p-6 max-w-sm w-full mx-4">
+      <h3 className="text-red-400 text-sm mb-4 font-stats">RESET PROFILE</h3>
+      <p className="text-gray-300 text-xs mb-6">This will erase ALL progress:</p>
+      <ul className="text-gray-400 text-xs mb-6 space-y-1">
+        <li>• Chips (reset to 1000)</li>
+        <li>• XP and Level</li>
+        <li>• Outfits</li>
+        <li>• Statistics</li>
+        <li>• Settings</li>
+      </ul>
+      <p className="text-red-400 text-xs mb-4">This cannot be undone!</p>
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 font-stats text-sm">CANCEL</button>
+        <button onClick={onConfirm} className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 font-stats text-sm">RESET</button>
+      </div>
+    </div>
+  </div>
+)
+
 // Main Menu Component
-const MainMenu = ({ onStart, onStats, progression }) => {
+const MainMenu = ({ onStart, onStats, onShop, onReset, progression }) => {
   const ld = calculateLevel(progression.totalXP)
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <div className="text-center mb-8">
         <h1 className="text-3xl sm:text-5xl font-stats text-pink-400 mb-2">WAIFU ROULETTE</h1>
-        <p className="text-cyan-400 font-stats text-sm sm:text-lg">’87 EDITION</p>
+        <p className="text-cyan-400 font-stats text-sm sm:text-lg">'87 EDITION</p>
       </div>
       <div className="citypop-panel p-6 sm:p-8 space-y-4 w-full max-w-sm">
         <button onClick={onStart} className="w-full py-3 sm:py-4 bg-pink-600 hover:bg-pink-500 text-white font-stats text-sm sm:text-lg border-2 border-pink-400 hover:border-pink-300 transition-all">
           START SESSION
         </button>
+        <button onClick={onShop} className="w-full py-3 sm:py-4 bg-[#1a2744] hover:bg-[#243654] text-cyan-300 font-stats text-sm sm:text-lg border-2 border-cyan-500 hover:border-cyan-400 transition-all">
+          OUTFIT SHOP
+        </button>
         <button onClick={onStats} className="w-full py-3 sm:py-4 bg-[#1a2744] hover:bg-[#243654] text-cyan-300 font-stats text-sm sm:text-lg border-2 border-cyan-500 hover:border-cyan-400 transition-all">
           VIEW STATS
+        </button>
+        <button onClick={onReset} className="w-full py-3 sm:py-4 bg-[#1a2744] hover:bg-[#3a1a1a] text-red-400 font-stats text-sm sm:text-lg border-2 border-red-800 hover:border-red-600 transition-all">
+          RESET PROFILE
         </button>
       </div>
       <p className="text-gray-500 text-xs mt-8 font-stats">Level {ld.level} • {progression.totalXP} XP</p>
@@ -223,12 +358,12 @@ function loadGameState() {
 }
 
 function saveGameState(state) {
-  try { localStorage.setItem('waifuRoulette', JSON.stringify(state)) } 
+  try { localStorage.setItem('waifuRoulette', JSON.stringify(state)) }
   catch (e) { console.error('Save error:', e) }
 }
 
 const DealerAvatar = ({ mood }) => {
-  const moods = { 
+  const moods = {
     happy: { emoji: '😊', size: 'text-7xl' },
     excited: { emoji: '😄', size: 'text-7xl' },
     winning: { emoji: '🥳', size: 'text-7xl' },
@@ -332,9 +467,9 @@ const RouletteWheel = ({ spinning, result, spinAngle, winningNumber }) => {
   const numbers = Array.from({ length: 37 }, (_, i) => i)
   return (
     <div className={`relative w-64 h-64 sm:w-72 sm:h-72 border-4 border-cyan-500 bg-[#0a1628] flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.3)] ${spinning ? 'animate-pulse' : ''}`}>
-      <div 
+      <div
         className="absolute inset-2"
-        style={{ 
+        style={{
           transform: `rotate(${spinAngle}deg)`,
           transition: spinning ? 'transform 4s cubic-bezier(0.25, 0.1, 0.25, 1)' : 'transform 0.5s ease-out'
         }}
@@ -373,7 +508,7 @@ const BettingTable = ({ bets, onBet, chipDenom }) => {
   return (
     <div className="bg-[#0f2d1a] border-2 border-green-600 p-1.5 text-[10px]">
       <div className="flex justify-center mb-1">
-        <button onClick={() => onBet('straight', 0)} 
+        <button onClick={() => onBet('straight', 0)}
                 className={`w-10 h-10 flex items-center justify-center font-bold text-white transition-all text-sm border-2 ${
                   bets[0]?.amount > 0 ? 'border-yellow-400 bg-green-700' : 'border-green-500 bg-green-800 hover:bg-green-700'
                 }`}>
@@ -489,9 +624,10 @@ const RunRecapModal = ({ runResults, bankroll, onClose }) => {
 }
 
 function App() {
-  const [bankroll, setBankroll] = useState(() => loadGameState()?.bankroll || INITIAL_BANKROLL)
-  const [history, setHistory] = useState(() => loadGameState()?.history || [])
-  const [analytics, setAnalytics] = useState(() => loadGameState()?.analytics || createInitialAnalytics())
+  const [profile, setProfile] = useState(() => loadProfile())
+  const [bankroll, setBankroll] = useState(profile.game?.bankroll || INITIAL_BANKROLL)
+  const [history, setHistory] = useState(profile.game?.history || [])
+  const [analytics, setAnalytics] = useState(() => profile.game?.analytics || createInitialAnalytics())
   const [bets, setBets] = useState(() => ({ red: 0, black: 0, odd: 0, even: 0, first12: 0, second12: 0, third12: 0, ...Object.fromEntries(Array.from({length: 37}, (_, i) => [i, 0])) }))
   const [betHistory, setBetHistory] = useState([])
   const [spinning, setSpinning] = useState(false)
@@ -506,37 +642,59 @@ function App() {
   const [runMode, setRunMode] = useState(false)
   const [runResults, setRunResults] = useState([])
   const [runRecap, setRunRecap] = useState(false)
-  const [progression, setProgression] = useState(() => loadProgression())
+  const [progression, setProgression] = useState(() => profile?.progression || loadProgression())
   const [cosmeticsOpen, setCosmeticsOpen] = useState(false)
   const [xpGain, setXpGain] = useState(null)
   const [levelUp, setLevelUp] = useState(null)
-  const [screen, setScreen] = useState('menu') // menu, game, stats
-  const [audioEnabled, setAudioEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('waifuRouletteAudio') || 'true') } catch { return true } })
-  const [shopState, setShopState] = useState(() => loadShopState())
-  const [outfitState, setOutfitState] = useState(() => loadOutfitState())
+  const [screen, setScreen] = useState('menu') // menu, game, stats, shop
+  const [audioEnabled, setAudioEnabled] = useState(() => profile?.audio ?? true)
+  const [shopState, setShopState] = useState(() => profile?.shop || loadShopState())
+  const [outfitState, setOutfitState] = useState(() => profile?.outfits || loadOutfitState())
   const [eventToast, setEventToast] = useState(null)
   const [showIntro, setShowIntro] = useState(() => { try { return !localStorage.getItem('waifuRouletteIntroSeen') } catch { return true } })
   const [vignette, setVignette] = useState(0)
   const [winningNumber, setWinningNumber] = useState(null)
   const [precomputedResult, setPrecomputedResult] = useState(null)
+  const [showReset, setShowReset] = useState(false)
+
+  // Reset profile handler
+  const handleReset = () => {
+    const fresh = createNewProfile()
+    setProfile(fresh)
+    setBankroll(fresh.game.bankroll)
+    setHistory(fresh.game.history)
+    setAnalytics(fresh.game.analytics)
+    setProgression(fresh.progression)
+    setShopState(fresh.shop)
+    setOutfitState(fresh.outfits)
+    setScreen('menu')
+    setShowReset(false)
+  }
 
   // Save audio preference
   useEffect(() => { try { localStorage.setItem('waifuRouletteAudio', JSON.stringify(audioEnabled)) } catch {} }, [audioEnabled])
-  
+
   const totalBet = Object.values(bets).reduce((a, b) => a + b, 0)
   const levelData = calculateLevel(progression.totalXP)
   const escalation = analytics.currentStreakType === 'win' ? analytics.currentStreak : 0
-  
-  useEffect(() => { saveGameState({ bankroll, history, analytics, settings: { sound: soundEnabled } }) }, [bankroll, history, analytics, soundEnabled])
-  useEffect(() => { saveProgression(progression) }, [progression])
-  useEffect(() => { saveShopState(shopState) }, [shopState])
-  useEffect(() => { saveOutfitState(outfitState) }, [outfitState])
-  
+
+  // Consolidated save to profile
+  useEffect(() => {
+    const newProfile = {
+      game: { bankroll, history, analytics },
+      progression,
+      shop: shopState,
+      outfits: outfitState,
+      audio: audioEnabled,
+    }
+    saveProfile(newProfile)
+  }, [bankroll, history, analytics, progression, shopState, outfitState, audioEnabled])
+
   useEffect(() => {
     if (analytics.currentStreakType === 'win' && analytics.currentStreak >= 2) setMood(analytics.currentStreak >= 3 ? 'winning' : 'happy')
     else if (analytics.currentStreakType === 'loss' && analytics.currentStreak >= 3) setMood('tilted')
   }, [analytics.currentStreak, analytics.currentStreakType])
-  
+
   const placeBet = useCallback((type, num) => {
     if (spinning) return
     const amount = chipDenom
@@ -544,14 +702,14 @@ function App() {
     setBets(prev => { const updated = {...prev}; if (typeof updated[type] === 'number') updated[type] += amount; else if (type === 'straight' && num !== undefined) updated[num] = (updated[num] || 0) + amount; return updated })
     setBetHistory(prev => [...prev, { type, num, amount }])
   }, [spinning, chipDenom, totalBet, bankroll])
-  
+
   const undoBet = useCallback(() => {
     if (spinning || betHistory.length === 0) return
     const last = betHistory[betHistory.length - 1]
     setBets(prev => { const updated = {...prev}; if (typeof updated[last.type] === 'number') updated[last.type] = Math.max(0, updated[last.type] - last.amount); else if (last.type === 'straight' && last.num !== undefined) updated[last.num] = Math.max(0, (updated[last.num] || 0) - last.amount); return updated })
     setBetHistory(prev => prev.slice(0, -1))
   }, [spinning, betHistory])
-  
+
   const spin = useCallback(() => {
     if (spinning || totalBet === 0) return
     // Precompute result before animation starts
@@ -563,7 +721,7 @@ function App() {
     setSpinning(true); setMood('excited'); setSpeech(DEALER_LINES.neutral[Math.floor(Math.random() * DEALER_LINES.neutral.length)]); setShowSpeech(true); if (audioEnabled) playSpinSound()
     // Add vignette for high stakes
     if (totalBet > 100) setVignette(1)
-    
+
     let spinCount = 0
     const spinInterval = setInterval(() => {
       setResult(Math.floor(Math.random() * 37))
@@ -583,13 +741,13 @@ function App() {
         setHistory(newHistory)
         const newAnalytics = updateAnalytics(analytics, payout)
         setAnalytics(newAnalytics)
-        
+
         // Update progression with XP
         setProgression(prev => addXP(prev, xpEarned))
-        
+
         // Process event engine
         const eventData = eventsEngine.onSpin({ hadStraightBet: isStraightHit, won: payout.isWin, color: spinResult.color })
-        
+
         // Apply event if triggered
         if (eventData.event) {
           const eventState = { chips: newBankroll, xp: progression.totalXP + xpEarned, modifiers: eventData.modifiers }
@@ -602,26 +760,26 @@ function App() {
             setBankroll(applied.chips)
           }
         }
-        
+
         // Show XP gain
         setXpGain(xpEarned)
         setTimeout(() => setXpGain(null), 1500)
-        
+
         // Check for level up
         const newLevel = calculateLevel(progression.totalXP + xpEarned).level
         if (newLevel > oldLevel) {
           setLevelUp(newLevel)
           setTimeout(() => setLevelUp(null), 2500)
         }
-        
+
         if (audioEnabled && payout.isWin) playWinSound()
         if (audioEnabled && payout.isLoss) playLoseSound()
         if (payout.isWin) { setMood(payout.netGain > 100 ? 'winning' : 'happy'); setSpeech(DEALER_LINES[payout.netGain > 100 ? 'winning' : 'happy'][Math.floor(Math.random() * 4)]) }
         else if (payout.isLoss) { setMood(newAnalytics.currentStreak >= 3 ? 'tilted' : 'losing'); setSpeech(DEALER_LINES.losing[Math.floor(Math.random() * DEALER_LINES.losing.length)]) }
         else { setMood('neutral'); setSpeech('Push!') }
-        
+
         if (runMode) setRunResults(prev => [...prev, { bet: totalBet, result: payout.netGain }])
-        
+
         setTimeout(() => {
           setSpinning(false); setShowSpeech(true); setVignette(0); setWinningNumber(null); setPrecomputedResult(null); setShareCard({ number: sr.number, color: sr.color })
           if (runMode && newAnalytics.totalSpins % 10 === 0) { setRunRecap(true); setRunMode(false) }
@@ -640,18 +798,20 @@ function App() {
     setBetHistory([]); setMood('neutral'); setSpeech('New game! Good luck!'); setShowSpeech(true)
     setTimeout(() => setShowSpeech(false), 2000)
   }
-  
+
   const startRunMode = () => { setRunMode(true); setRunResults([]); setSpeech('Starting 10-spin run!'); setShowSpeech(true); setTimeout(() => setShowSpeech(false), 2000) }
-  
+
   const selectCosmetic = (type, id) => {
     setProgression(prev => ({ ...prev, [`selected${type.charAt(0).toUpperCase() + type.slice(1)}`]: id }))
     setCosmeticsOpen(false)
   }
-  
+
   return (
     <>{showIntro && <IntroSequence onComplete={() => setShowIntro(false)} />}
       <VignetteOverlay intensity={vignette} />
-      {screen === 'menu' && <MainMenu onStart={() => setScreen('game')} onStats={() => setScreen('stats')} progression={progression} />}
+      {showReset && <ResetModal onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
+      {screen === 'menu' && <MainMenu onStart={() => setScreen('game')} onStats={() => setScreen('stats')} onShop={() => setScreen('shop')} onReset={() => setShowReset(true)} progression={progression} />}
+      {screen === 'shop' && <ShopScreen progression={progression} outfitState={outfitState} bankroll={bankroll} onBuy={(id, price) => { const r = purchaseOutfit(id, bankroll, calculateLevel(progression.totalXP).level, outfitState); if (r.success) { setOutfitState(prev => ({ ...prev, ownedOutfits: r.ownedOutfits })); setBankroll(r.chips); setEventToast({ title: 'Purchased!', text: r.outfit.name, type: 'positive' }); setTimeout(() => setEventToast(null), 2000) } else { setEventToast({ title: 'Error', text: r.reason, type: 'negative' }); setTimeout(() => setEventToast(null), 2000) }}} onEquip={(id) => { const r = equipOutfit(id, outfitState); if (r.success) { setOutfitState(prev => ({ ...prev, equippedOutfit: r.equippedOutfit })); setEventToast({ title: 'Equipped!', text: OUTFITS[id].name, type: 'positive' }); setTimeout(() => setEventToast(null), 2000) }}} onClose={() => setScreen('menu')} />}
       {screen === 'stats' && <StatsScreen progression={progression} onBack={() => setScreen('menu')} />}
       {screen === 'game' && <div className="min-h-screen">
       <header className="citypop-panel border-b-0 px-4 py-3 sm:px-6 sm:py-4">
@@ -667,7 +827,7 @@ function App() {
           </div>
         </div>
       </header>
-      
+
       <main className="max-w-6xl mx-auto p-2 sm:p-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 sm:gap-4">
           <div className="space-y-2 sm:space-y-4">
@@ -675,7 +835,7 @@ function App() {
             <div className="citypop-panel p-3 sm:p-4 flex flex-col items-center"><h2 className="text-pink-400 mb-2 text-xs sm:text-sm">DEALER</h2><div className="relative mb-2"><DealerAvatar mood={mood} /><SpeechBubble message={speech} visible={showSpeech} /></div><MoodMeter mood={mood} /></div>
             <div className="citypop-panel-cyan p-3 sm:p-4"><h3 className="text-cyan-400 text-xs mb-2 flex items-center gap-2"><TrendingUp className="w-3 h-3" />STATS</h3><div className="grid grid-cols-2 gap-2 text-xs font-stats"><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Win Rate</span><span className="text-green-500 text-lg">{getWinRate(analytics)}%</span></div><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Spins</span><span className="text-white text-lg">{analytics.totalSpins}</span></div><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Biggest</span><span className="text-yellow-400 text-lg">{analytics.biggestWin}</span></div><div className="bg-[#0a1628] p-2 border border-gray-700"><span className="text-gray-400 block">Streak</span><span className="text-pink-400 text-lg">{analytics.currentStreak > 0 ? analytics.currentStreak + (analytics.currentStreakType === 'win' ? '🔥' : '💨') : '-'}</span></div></div></div>
           </div>
-          
+
           <div className="citypop-panel p-3 sm:p-4 flex flex-col items-center">
             <h2 className="text-cyan-400 mb-2 text-xs sm:text-sm">ROULETTE</h2>
             <RouletteWheel spinning={spinning} result={result} spinAngle={spinAngle} winningNumber={winningNumber} />
@@ -687,7 +847,7 @@ function App() {
             <div className="mt-4 w-full"><h3 className="text-gray-400 text-[10px] text-center mb-2 font-stats">LAST 10</h3><div className="flex flex-wrap justify-center gap-1">{history.length === 0 ? <span className="text-gray-500 text-xs">No spins yet</span> : history.slice(0, 10).map((h, i) => <span key={i} className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center text-[9px] sm:text-xs font-bold border-2 text-white" style={{ backgroundColor: h.color === 'red' ? '#991b1b' : h.color === 'black' ? '#1f2937' : '#065f46', borderColor: h.color === 'red' ? '#dc2626' : h.color === 'black' ? '#4b5563' : '#10b981' }}>{h.number}</span>)}</div></div>
             <div className="mt-3 w-full"><button onClick={startRunMode} disabled={spinning || runMode} className="w-full bg-[#1e3a5f] hover:bg-[#264973] text-white py-2 font-stats text-xs flex items-center justify-center gap-2 border-2 border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"><Play className="w-3 h-3" />10-SPIN RUN</button>{runMode && <p className="text-pink-400 text-[10px] mt-1 text-center">Run in progress... {analytics.totalSpins % 10}/10</p>}</div>
           </div>
-          
+
           <div className="space-y-2 sm:space-y-4">
             <div className="citypop-panel p-2 sm:p-3">
               <div className="flex justify-center gap-1.5 sm:gap-2 mb-2">{CHIP_DENOMINATIONS.map(d => <button key={d} onClick={() => setChipDenom(d)} className={`w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center font-bold text-xs transition-all border-2 ${chipDenom === d ? 'bg-yellow-400 text-yellow-900 border-yellow-300 scale-110' : 'bg-gray-700 text-gray-300 border-gray-600 hover:border-gray-500'}`}>{d}</button>)}</div>
@@ -698,9 +858,9 @@ function App() {
           </div>
         </div>
       </main>
-      
+
       <footer className="citypop-panel border-t-0 py-3 mt-4"><div className="max-w-6xl mx-auto text-center"><p className="text-pink-300/60 text-xs">🎮 Entertainment only. No real wagering. Fake chips have no value. 🎮</p></div></footer>
-      
+
       {shareCard && <ShareCard result={shareCard} bankroll={bankroll} onClose={() => setShareCard(null)} />}
       {runRecap && <RunRecapModal runResults={runResults} bankroll={bankroll} onClose={() => setRunRecap(false)} />}
       {cosmeticsOpen && <CosmeticsModal progression={progression} onSelect={selectCosmetic} onClose={() => setCosmeticsOpen(false)} />}
