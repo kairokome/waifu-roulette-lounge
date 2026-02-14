@@ -215,10 +215,10 @@ function App() {
       <header className="bg-navy-800 border-b border-navy-700 px-6 py-4">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center">
-            <Shield className="w-8 h-8 text-cyan-glow mr-3" />
+            <Shield className="w-8 h-8 text-pink-400 mr-3" />
             <div>
-              <h1 className="font-orbitron font-bold text-xl text-cyan-glow">ACG MISSION BOARD</h1>
-              <p className="text-slate-400 text-xs">Agent Command Grid • Command Center</p>
+              <h1 className="font-orbitron font-bold text-xl text-pink-400">WAIFU ROULETTE LOUNGE</h1>
+              <p className="text-slate-400 text-xs">Anime Gaming • Entertainment Zone</p>
             </div>
           </div>
           <div className="flex items-center space-x-4">
