@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Press+Start+2P&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,51 +10,143 @@
   box-sizing: border-box;
 }
 
-body {
-  font-family: 'Inter', sans-serif;
-  background: #0f172a;
-  color: #f8fafc;
-  min-height: 100vh;
+:root {
+  --citypop-navy: #0a1628;
+  --citypop-midnight: #1a2744;
+  --citypop-pink: #ec4899;
+  --citypop-cyan: #06b6d4;
+  --citypop-green: #10b981;
+  --citypop-red: #f87171;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: 'Orbitron', sans-serif;
+body {
+  font-family: 'IBM Plex Mono', monospace;
+  background: linear-gradient(180deg, var(--citypop-navy) 0%, var(--citypop-midnight) 100%);
+  color: #e2e8f0;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
 }
+
+/* Radial glow effect */
+body::before {
+  content: '';
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 150%;
+  height: 150%;
+  background: radial-gradient(ellipse at center, 
+    rgba(236, 72, 153, 0.08) 0%, 
+    rgba(6, 182, 212, 0.06) 30%,
+    transparent 60%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Pixel skyline silhouette */
+body::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background-image: 
+    /* Buildings layer 1 - tall */
+    linear-gradient(to right, 
+      transparent 2%, #0d1a30 2%, #0d1a30 5%, 
+      transparent 5%, transparent 8%, #0d1a30 8%, #0d1a30 12%,
+      transparent 12%, transparent 15%, #0d1a30 15%, #0d1a30 18%,
+      transparent 18%, transparent 22%, #0d1a30 22%, #0d1a30 25%,
+      transparent 25%, transparent 28%, #0d1a30 28%, #0d1a30 35%,
+      transparent 35%, transparent 40%, #0d1a30 40%, #0d1a30 48%,
+      transparent 48%, transparent 52%, #0d1a30 52%, #0d1a30 55%,
+      transparent 55%, transparent 58%, #0d1a30 58%, #0d1a30 62%,
+      transparent 62%, transparent 65%, #0d1a30 65%, #0d1a30 70%,
+      transparent 70%, transparent 75%, #0d1a30 75%, #0d1a30 78%,
+      transparent 78%, transparent 82%, #0d1a30 82%, #0d1a30 85%,
+      transparent 85%, transparent 88%, #0d1a30 88%, #0d1a30 92%,
+      transparent 92%, transparent 95%, #0d1a30 95%, #0d1a30 98%,
+      transparent 98%
+    ),
+    /* Buildings layer 2 - medium */
+    linear-gradient(to right,
+      transparent 3%, #0f1f38 3%, #0f1f38 7%,
+      transparent 7%, transparent 12%, #0f1f38 12%, #0f1f38 16%,
+      transparent 16%, transparent 20%, #0f1f38 20%, #0f1f38 24%,
+      transparent 24%, transparent 30%, #0f1f38 30%, #0f1f38 33%,
+      transparent 33%, transparent 38%, #0f1f38 38%, #0f1f38 42%,
+      transparent 42%, transparent 45%, #0f1f38 45%, #0f1f38 50%,
+      transparent 50%, transparent 55%, #0f1f38 55%, #0f1f38 58%,
+      transparent 58%, transparent 62%, #0f1f38 62%, #0f1f38 66%,
+      transparent 66%, transparent 70%, #0f1f38 70%, #0f1f38 73%,
+      transparent 73%, transparent 78%, #0f1f38 78%, #0f1f38 82%,
+      transparent 82%, transparent 86%, #0f1f38 86%, #0f1f38 90%,
+      transparent 90%, transparent 94%, #0f1f38 94%, #0f1f38 97%,
+      transparent 97%
+    );
+  background-size: 100% 100%;
+  opacity: 0.15;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Headers - pixel font */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Press Start 2P', cursive;
+  letter-spacing: 1px;
+}
+
+/* Stats and numbers - IBM Plex Mono */
+.font-stats {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+}
+
+/* City Pop Panel - sharp corners with glow */
+.citypop-panel {
+  background: rgba(10, 22, 40, 0.8);
+  border: 2px solid var(--citypop-pink);
+  border-radius: 0;
+  box-shadow: 
+    0 0 15px rgba(236, 72, 153, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.3);
+}
+
+.citypop-panel-cyan {
+  background: rgba(10, 22, 40, 0.8);
+  border: 2px solid var(--citypop-cyan);
+  border-radius: 0;
+  box-shadow: 
+    0 0 15px rgba(6, 182, 212, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.3);
+}
+
+/* Win/Loss colors */
+.text-win { color: var(--citypop-green); }
+.text-loss { color: var(--citypop-red); }
+.bg-win { background-color: var(--citypop-green); }
+.bg-loss { background-color: var(--citypop-red); }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: #0a1628;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
+  background: var(--citypop-pink);
+  border-radius: 0;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
-}
-
-/* Glow effects */
-.glow-pink {
-  box-shadow: 0 0 20px rgba(236, 72, 153, 0.5);
-}
-
-.glow-cyan {
-  box-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
-}
-
-.glow-amber {
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
-}
-
-.glow-emerald {
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+  background: var(--citypop-cyan);
 }
 
 /* Animations */
@@ -65,33 +159,30 @@ h1, h2, h3, h4, h5, h6 {
   animation: spin 2s ease-out forwards;
 }
 
-.animate-spin-slow {
-  animation: spin 2s ease-out forwards;
-}
-
 @keyframes bounce-slow {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  50% { transform: translateY(-5px); }
 }
 
 .animate-bounce-slow {
   animation: bounce-slow 2s ease-in-out infinite;
 }
 
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 10px rgba(236, 72, 153, 0.3); }
-  50% { box-shadow: 0 0 30px rgba(236, 72, 153, 0.6); }
+/* Minimal pulse for winning number */
+@keyframes win-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 
-.pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
+.win-highlight {
+  animation: win-pulse 1s ease-in-out;
 }
 
-/* Confetti effect (CSS-only fallback) */
+/* Confetti effect */
 .confetti {
   position: fixed;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   top: -10px;
   animation: confetti-fall 3s ease-out forwards;
 }
@@ -104,5 +195,22 @@ h1, h2, h3, h4, h5, h6 {
   100% {
     transform: translateY(100vh) rotate(720deg);
     opacity: 0;
+  }
+}
+
+/* Ensure content is above skyline */
+#root {
+  position: relative;
+  z-index: 10;
+}
+
+/* Mobile optimization */
+@media (max-width: 640px) {
+  h1, h2, h3 {
+    font-size: 0.7rem;
+  }
+  
+  body::after {
+    height: 60px;
   }
 }
