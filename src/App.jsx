@@ -19,6 +19,8 @@ import {
   calculateLevel, calculateXPEarned, getNextUnlock, 
   loadProgression, saveProgression, addXP, calculateRunGrade, getEscalationStyles, COSMETICS 
 } from './progression'
+import { eventsEngine, EVENTS } from './systems/eventsEngine'
+import { loadShopState, saveShopState, purchaseItem, equipItem, SHOP_CATALOG, getAvailableItems } from './systems/shop'
 
 const INITIAL_BANKROLL = 1000
 
@@ -71,6 +73,19 @@ const playLoseSound = () => {
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + 0.3)
   } catch (e) {}
+}
+
+// Event Toast Component
+const EventToast = ({ toast }) => {
+  if (!toast) return null
+  const bgColor = toast.type === 'positive' ? 'bg-green-900' : toast.type === 'negative' ? 'bg-red-900' : toast.type === 'epic' ? 'bg-purple-900' : 'bg-gray-800'
+  const borderColor = toast.type === 'positive' ? 'border-green-500' : toast.type === 'negative' ? 'border-red-500' : toast.type === 'epic' ? 'border-purple-500' : 'border-gray-500'
+  return (
+    <div className={`fixed top-4 right-4 z-40 p-3 border-2 ${bgColor} ${borderColor} animate-bounce`}>
+      <p className="text-xs font-stats text-white">{toast.title}</p>
+      <p className="text-[10px] font-stats text-gray-300">{toast.text}</p>
+    </div>
+  )
 }
 
 // Main Menu Component
@@ -443,6 +458,8 @@ function App() {
   const [levelUp, setLevelUp] = useState(null)
   const [screen, setScreen] = useState('menu') // menu, game, stats
   const [audioEnabled, setAudioEnabled] = useState(() => { try { return JSON.parse(localStorage.getItem('waifuRouletteAudio') || 'true') } catch { return true } })
+  const [shopState, setShopState] = useState(() => loadShopState())
+  const [eventToast, setEventToast] = useState(null)
 
   // Save audio preference
   useEffect(() => { try { localStorage.setItem('waifuRouletteAudio', JSON.stringify(audioEnabled)) } catch {} }, [audioEnabled])
@@ -453,6 +470,7 @@ function App() {
   
   useEffect(() => { saveGameState({ bankroll, history, analytics, settings: { sound: soundEnabled } }) }, [bankroll, history, analytics, soundEnabled])
   useEffect(() => { saveProgression(progression) }, [progression])
+  useEffect(() => { saveShopState(shopState) }, [shopState])
   
   useEffect(() => {
     if (analytics.currentStreakType === 'win' && analytics.currentStreak >= 2) setMood(analytics.currentStreak >= 3 ? 'winning' : 'happy')
@@ -502,6 +520,22 @@ function App() {
         
         // Update progression with XP
         setProgression(prev => addXP(prev, xpEarned))
+        
+        // Process event engine
+        const eventData = eventsEngine.onSpin({ hadStraightBet: isStraightHit, won: payout.isWin, color: spinResult.color })
+        
+        // Apply event if triggered
+        if (eventData.event) {
+          const eventState = { chips: newBankroll, xp: progression.totalXP + xpEarned, modifiers: eventData.modifiers }
+          const applied = eventsEngine.applyEvent(eventData.event, eventState, { hadStraightBet: isStraightHit, won: payout.isWin, color: spinResult.color })
+          if (applied.toast) {
+            setEventToast(applied.toast)
+            setTimeout(() => setEventToast(null), 3000)
+          }
+          if (applied.chips !== undefined && applied.chips !== newBankroll) {
+            setBankroll(applied.chips)
+          }
+        }
         
         // Show XP gain
         setXpGain(xpEarned)
@@ -602,6 +636,7 @@ function App() {
       {shareCard && <ShareCard result={shareCard} bankroll={bankroll} onClose={() => setShareCard(null)} />}
       {runRecap && <RunRecapModal runResults={runResults} bankroll={bankroll} onClose={() => setRunRecap(false)} />}
       {cosmeticsOpen && <CosmeticsModal progression={progression} onSelect={selectCosmetic} onClose={() => setCosmeticsOpen(false)} />}
+      {eventToast && <EventToast toast={eventToast} />}
       </div>}
     </>
   )
